@@ -1,0 +1,103 @@
+syntax = "proto3";
+
+package todo;
+
+option go_package = "./;todo";
+
+// The Todo service definition
+service TodoService {
+  // Create a new todo item
+  rpc CreateTodo (CreateTodoRequest) returns (CreateTodoResponse);
+  
+  // Get a todo item by ID
+  rpc GetTodo (GetTodoRequest) returns (GetTodoResponse);
+  
+  // List all todo items
+  rpc ListTodos (ListTodosRequest) returns (ListTodosResponse);
+  
+  // Update a todo item
+  rpc UpdateTodo (UpdateTodoRequest) returns (UpdateTodoResponse);
+  
+  // Delete a todo item
+  rpc DeleteTodo (DeleteTodoRequest) returns (DeleteTodoResponse);
+}
+
+// Request message for creating a todo
+message CreateTodoRequest {
+  string title = 1;
+  string description = 2;
+  bool completed = 3;
+}
+
+// Response message for creating a todo
+message CreateTodoResponse {
+  int32 id = 1;
+  string title = 2;
+  string description = 3;
+  bool completed = 4;
+  string created_at = 5;
+}
+
+// Request message for getting a todo
+message GetTodoRequest {
+  int32 id = 1;
+}
+
+// Response message for getting a todo
+message GetTodoResponse {
+  int32 id = 1;
+  string title = 2;
+  string description = 3;
+  bool completed = 4;
+  string created_at = 5;
+}
+
+// Request message for listing todos
+message ListTodosRequest {
+  int32 page = 1;
+  int32 limit = 2;
+}
+
+// Response message for listing todos
+message ListTodosResponse {
+  repeated TodoItem todos = 1;
+  int32 total = 2;
+  int32 page = 3;
+  int32 limit = 4;
+}
+
+// Request message for updating a todo
+message UpdateTodoRequest {
+  int32 id = 1;
+  string title = 2;
+  string description = 3;
+  bool completed = 4;
+}
+
+// Response message for updating a todo
+message UpdateTodoResponse {
+  int32 id = 1;
+  string title = 2;
+  string description = 3;
+  bool completed = 4;
+  string updated_at = 5;
+}
+
+// Request message for deleting a todo
+message DeleteTodoRequest {
+  int32 id = 1;
+}
+
+// Response message for deleting a todo
+message DeleteTodoResponse {
+  bool deleted = 1;
+}
+
+// Todo item message
+message TodoItem {
+  int32 id = 1;
+  string title = 2;
+  string description = 3;
+  bool completed = 4;
+  string created_at = 5;
+}
