@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,6 +33,10 @@ func newTodoServer() *todoServer {
 }
 
 func (s *todoServer) CreateTodo(ctx context.Context, req *pb.CreateTodoRequest) (*pb.CreateTodoResponse, error) {
+	if strings.TrimSpace(req.GetTitle()) == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "title is required")
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -115,6 +120,10 @@ func (s *todoServer) ListTodos(ctx context.Context, req *pb.ListTodosRequest) (*
 }
 
 func (s *todoServer) UpdateTodo(ctx context.Context, req *pb.UpdateTodoRequest) (*pb.UpdateTodoResponse, error) {
+	if strings.TrimSpace(req.GetTitle()) == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "title is required")
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

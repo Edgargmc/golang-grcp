@@ -6,7 +6,9 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 
 	pb "grpc-todo/gen"
 )
@@ -21,6 +23,17 @@ func main() {
 	client := pb.NewTodoServiceClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
+	if _, err := client.CreateTodo(ctx, &pb.CreateTodoRequest{Title: "   "}); err != nil {
+		st, _ := status.FromError(err)
+		if st.Code() == codes.InvalidArgument {
+			log.Printf("Got expected validation error: %s", st.Message())
+		} else {
+			log.Printf("Got unexpected error code=%s message=%s", st.Code(), st.Message())
+		}
+	} else {
+		log.Println("Expected an InvalidArgument error for empty title, but the call succeeded")
+	}
 
 	created, err := client.CreateTodo(ctx, &pb.CreateTodoRequest{
 		Title:       "Learn gRPC",
