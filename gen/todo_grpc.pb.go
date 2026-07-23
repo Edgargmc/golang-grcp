@@ -19,11 +19,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	TodoService_CreateTodo_FullMethodName = "/todo.TodoService/CreateTodo"
-	TodoService_GetTodo_FullMethodName    = "/todo.TodoService/GetTodo"
-	TodoService_ListTodos_FullMethodName  = "/todo.TodoService/ListTodos"
-	TodoService_UpdateTodo_FullMethodName = "/todo.TodoService/UpdateTodo"
-	TodoService_DeleteTodo_FullMethodName = "/todo.TodoService/DeleteTodo"
+	TodoService_CreateTodo_FullMethodName   = "/todo.TodoService/CreateTodo"
+	TodoService_GetTodo_FullMethodName      = "/todo.TodoService/GetTodo"
+	TodoService_ListTodos_FullMethodName    = "/todo.TodoService/ListTodos"
+	TodoService_UpdateTodo_FullMethodName   = "/todo.TodoService/UpdateTodo"
+	TodoService_DeleteTodo_FullMethodName   = "/todo.TodoService/DeleteTodo"
+	TodoService_CompleteTodo_FullMethodName = "/todo.TodoService/CompleteTodo"
 )
 
 // TodoServiceClient is the client API for TodoService service.
@@ -42,6 +43,8 @@ type TodoServiceClient interface {
 	UpdateTodo(ctx context.Context, in *UpdateTodoRequest, opts ...grpc.CallOption) (*UpdateTodoResponse, error)
 	// Delete a todo item
 	DeleteTodo(ctx context.Context, in *DeleteTodoRequest, opts ...grpc.CallOption) (*DeleteTodoResponse, error)
+	// Mark a todo item as completed
+	CompleteTodo(ctx context.Context, in *CompleteTodoRequest, opts ...grpc.CallOption) (*CompleteTodoResponse, error)
 }
 
 type todoServiceClient struct {
@@ -102,6 +105,16 @@ func (c *todoServiceClient) DeleteTodo(ctx context.Context, in *DeleteTodoReques
 	return out, nil
 }
 
+func (c *todoServiceClient) CompleteTodo(ctx context.Context, in *CompleteTodoRequest, opts ...grpc.CallOption) (*CompleteTodoResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CompleteTodoResponse)
+	err := c.cc.Invoke(ctx, TodoService_CompleteTodo_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // TodoServiceServer is the server API for TodoService service.
 // All implementations must embed UnimplementedTodoServiceServer
 // for forward compatibility.
@@ -118,6 +131,8 @@ type TodoServiceServer interface {
 	UpdateTodo(context.Context, *UpdateTodoRequest) (*UpdateTodoResponse, error)
 	// Delete a todo item
 	DeleteTodo(context.Context, *DeleteTodoRequest) (*DeleteTodoResponse, error)
+	// Mark a todo item as completed
+	CompleteTodo(context.Context, *CompleteTodoRequest) (*CompleteTodoResponse, error)
 	mustEmbedUnimplementedTodoServiceServer()
 }
 
@@ -142,6 +157,9 @@ func (UnimplementedTodoServiceServer) UpdateTodo(context.Context, *UpdateTodoReq
 }
 func (UnimplementedTodoServiceServer) DeleteTodo(context.Context, *DeleteTodoRequest) (*DeleteTodoResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteTodo not implemented")
+}
+func (UnimplementedTodoServiceServer) CompleteTodo(context.Context, *CompleteTodoRequest) (*CompleteTodoResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CompleteTodo not implemented")
 }
 func (UnimplementedTodoServiceServer) mustEmbedUnimplementedTodoServiceServer() {}
 func (UnimplementedTodoServiceServer) testEmbeddedByValue()                     {}
@@ -254,6 +272,24 @@ func _TodoService_DeleteTodo_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _TodoService_CompleteTodo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CompleteTodoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TodoServiceServer).CompleteTodo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TodoService_CompleteTodo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TodoServiceServer).CompleteTodo(ctx, req.(*CompleteTodoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // TodoService_ServiceDesc is the grpc.ServiceDesc for TodoService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -280,6 +316,10 @@ var TodoService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteTodo",
 			Handler:    _TodoService_DeleteTodo_Handler,
+		},
+		{
+			MethodName: "CompleteTodo",
+			Handler:    _TodoService_CompleteTodo_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

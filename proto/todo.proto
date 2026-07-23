@@ -20,6 +20,9 @@ service TodoService {
   
   // Delete a todo item
   rpc DeleteTodo (DeleteTodoRequest) returns (DeleteTodoResponse);
+
+  // Mark a todo item as completed
+  rpc CompleteTodo (CompleteTodoRequest) returns (CompleteTodoResponse);
 }
 
 // Request message for creating a todo
@@ -91,6 +94,17 @@ message DeleteTodoRequest {
 // Response message for deleting a todo
 message DeleteTodoResponse {
   bool deleted = 1;
+}
+
+// Request message for completing a todo
+message CompleteTodoRequest {
+  int32 id = 1;
+}
+
+// Response message for completing a todo
+message CompleteTodoResponse {
+  int32 id = 1;
+  bool completed = 2;
 }
 
 // Todo item message

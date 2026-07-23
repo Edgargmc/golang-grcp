@@ -157,6 +157,19 @@ func (s *todoServer) DeleteTodo(ctx context.Context, req *pb.DeleteTodoRequest) 
 	return &pb.DeleteTodoResponse{Deleted: true}, nil
 }
 
+func (s *todoServer) CompleteTodo(ctx context.Context, req *pb.CompleteTodoRequest) (*pb.CompleteTodoResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	item, ok := s.todos[req.GetId()]
+	if !ok {
+		return nil, status.Errorf(codes.NotFound, "todo with id %d not found", req.GetId())
+	}
+	item.Completed = true
+
+	return &pb.CompleteTodoResponse{Id: item.Id, Completed: item.Completed}, nil
+}
+
 func main() {
 	lis, err := net.Listen("tcp", ":50051")
 	if err != nil {
