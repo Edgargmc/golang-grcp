@@ -7,8 +7,9 @@
 *.test
 *.out
 
-# Base de datos SQLite generada en runtime
-/server/todos.db
+# Base de datos SQLite generada en runtime (sin importar desde qué
+# directorio se corra el servidor)
+todos.db
 
 # IDE
 .idea/
