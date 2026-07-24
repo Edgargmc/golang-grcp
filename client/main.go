@@ -8,13 +8,25 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	pb "grpc-todo/gen"
 )
 
+// Debe coincidir con el authToken hardcodeado en server/main.go.
+const authToken = "secret-token-123"
+
+func authInterceptor(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", authToken)
+	return invoker(ctx, method, req, reply, cc, opts...)
+}
+
 func main() {
-	conn, err := grpc.NewClient("localhost:50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient("localhost:50051",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(authInterceptor),
+	)
 	if err != nil {
 		log.Fatalf("Failed to connect to server: %v", err)
 	}

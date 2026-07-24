@@ -11,11 +11,16 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 
 	pb "grpc-todo/gen"
 )
+
+// Token fijo solo para fines didácticos. En un caso real esto vendría
+// de una base de datos, un JWT firmado, o un proveedor de identidad.
+const authToken = "secret-token-123"
 
 type todoServer struct {
 	pb.UnimplementedTodoServiceServer
@@ -170,13 +175,42 @@ func (s *todoServer) CompleteTodo(ctx context.Context, req *pb.CompleteTodoReque
 	return &pb.CompleteTodoResponse{Id: item.Id, Completed: item.Completed}, nil
 }
 
+func loggingInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	start := time.Now()
+
+	resp, err := handler(ctx, req)
+
+	duration := time.Since(start)
+	if err != nil {
+		log.Printf("[%s] failed in %s: %v", info.FullMethod, duration, err)
+	} else {
+		log.Printf("[%s] ok in %s", info.FullMethod, duration)
+	}
+
+	return resp, err
+}
+
+func authInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing metadata")
+	}
+
+	tokens := md.Get("authorization")
+	if len(tokens) == 0 || tokens[0] != authToken {
+		return nil, status.Error(codes.Unauthenticated, "invalid or missing token")
+	}
+
+	return handler(ctx, req)
+}
+
 func main() {
 	lis, err := net.Listen("tcp", ":50051")
 	if err != nil {
 		log.Fatalf("Failed to listen: %v", err)
 	}
 
-	s := grpc.NewServer()
+	s := grpc.NewServer(grpc.ChainUnaryInterceptor(loggingInterceptor, authInterceptor))
 	pb.RegisterTodoServiceServer(s, newTodoServer())
 	reflection.Register(s)
 
