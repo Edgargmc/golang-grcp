@@ -18,18 +18,22 @@ import (
 
 const bufSize = 1024 * 1024
 
-// newTestClient levanta el servidor real (mismos interceptors que producción)
-// sobre bufconn, sin abrir ningún puerto TCP real.
-func newTestClient(t *testing.T) pb.TodoServiceClient {
+// newTestServer levanta el servidor real (mismos interceptors que producción)
+// sobre bufconn, sin abrir ningún puerto TCP real, y devuelve tanto el
+// *todoServer (por si un test necesita inspeccionar su estado interno)
+// como el cliente ya conectado.
+func newTestServer(t *testing.T) (*todoServer, pb.TodoServiceClient) {
 	t.Helper()
 
 	lis := bufconn.Listen(bufSize)
+
+	srv := newTodoServer(newInMemoryRepository())
 
 	s := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(loggingInterceptor, authInterceptor),
 		grpc.ChainStreamInterceptor(streamAuthInterceptor),
 	)
-	pb.RegisterTodoServiceServer(s, newTodoServer())
+	pb.RegisterTodoServiceServer(s, srv)
 
 	go func() {
 		_ = s.Serve(lis)
@@ -50,7 +54,15 @@ func newTestClient(t *testing.T) pb.TodoServiceClient {
 	}
 	t.Cleanup(func() { _ = conn.Close() })
 
-	return pb.NewTodoServiceClient(conn)
+	return srv, pb.NewTodoServiceClient(conn)
+}
+
+// newTestClient es un atajo para los tests que no necesitan tocar el
+// *todoServer directamente, la mayoría.
+func newTestClient(t *testing.T) pb.TodoServiceClient {
+	t.Helper()
+	_, client := newTestServer(t)
+	return client
 }
 
 // authContext agrega el mismo token que exige authInterceptor.
@@ -111,6 +123,104 @@ func TestCreateTodo_MissingToken_ReturnsUnauthenticated(t *testing.T) {
 	}
 	if st.Code() != codes.Unauthenticated {
 		t.Errorf("expected code %v, got %v", codes.Unauthenticated, st.Code())
+	}
+}
+
+func TestListTodos_ExpiredDeadline_ReturnsDeadlineExceeded(t *testing.T) {
+	client := newTestClient(t)
+
+	ctx, cancel := context.WithTimeout(authContext(context.Background()), 1*time.Nanosecond)
+	defer cancel()
+	time.Sleep(1 * time.Millisecond) // asegurar que el deadline ya venció al momento de llamar
+
+	_, err := client.ListTodos(ctx, &pb.ListTodosRequest{Page: 1, Limit: 10})
+	if err == nil {
+		t.Fatal("expected a deadline exceeded error, got nil")
+	}
+
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected a gRPC status error, got %v", err)
+	}
+	if st.Code() != codes.DeadlineExceeded {
+		t.Errorf("expected code %v, got %v", codes.DeadlineExceeded, st.Code())
+	}
+}
+
+func TestWatchTodos_DeadlineExceeded_ClosesStream(t *testing.T) {
+	client := newTestClient(t)
+
+	watchCtx, cancel := context.WithTimeout(authContext(context.Background()), 200*time.Millisecond)
+	defer cancel()
+
+	stream, err := client.WatchTodos(watchCtx, &pb.WatchTodosRequest{})
+	if err != nil {
+		t.Fatalf("WatchTodos failed: %v", err)
+	}
+
+	start := time.Now()
+	_, err = stream.Recv() // no hay eventos: se queda esperando hasta que venza el deadline
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected an error when the deadline expires, got nil")
+	}
+
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected a gRPC status error, got %v", err)
+	}
+	if st.Code() != codes.DeadlineExceeded {
+		t.Errorf("expected code %v, got %v", codes.DeadlineExceeded, st.Code())
+	}
+
+	// A diferencia del paso 1, acá el request SÍ llegó al servidor y se quedó
+	// esperando ahí: confirmamos que tardó ~200ms, no que falló al instante.
+	if elapsed < 150*time.Millisecond {
+		t.Errorf("expected to wait close to the deadline, only waited %v", elapsed)
+	}
+}
+
+func TestWatchTodos_DeadlineExceeded_UnsubscribesListener(t *testing.T) {
+	srv, client := newTestServer(t)
+	b := srv.events.(*broadcaster)
+
+	watchCtx, cancel := context.WithTimeout(authContext(context.Background()), 200*time.Millisecond)
+	defer cancel()
+
+	stream, err := client.WatchTodos(watchCtx, &pb.WatchTodosRequest{})
+	if err != nil {
+		t.Fatalf("WatchTodos failed: %v", err)
+	}
+
+	// El Subscribe() del lado servidor corre en su propio goroutine: darle
+	// un instante a que se registre antes de seguir.
+	waitUntil(t, 500*time.Millisecond, func() bool { return b.listenerCount() == 1 })
+
+	// Se queda esperando hasta que el deadline corte el stream solo.
+	if _, err := stream.Recv(); err == nil {
+		t.Fatal("expected the stream to fail once the deadline expires")
+	}
+
+	// El defer Unsubscribe() del handler también corre en su propio goroutine.
+	waitUntil(t, 500*time.Millisecond, func() bool { return b.listenerCount() == 0 })
+
+	if got := b.listenerCount(); got != 0 {
+		t.Errorf("expected 0 listeners after disconnect, got %d (posible fuga)", got)
+	}
+}
+
+// waitUntil sondea condition() hasta que sea true o venza el timeout,
+// para no depender de sleeps fijos en asserts sobre goroutines concurrentes.
+func waitUntil(t *testing.T, timeout time.Duration, condition func() bool) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for !condition() {
+		if time.Now().After(deadline) {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 

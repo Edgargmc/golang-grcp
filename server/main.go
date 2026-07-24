@@ -6,7 +6,6 @@ import (
 	"net"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"google.golang.org/grpc"
@@ -25,19 +24,16 @@ const authToken = "secret-token-123"
 type todoServer struct {
 	pb.UnimplementedTodoServiceServer
 
-	mu     sync.Mutex
-	todos  map[int32]*pb.TodoItem
-	nextID int32
+	repo TodoRepository
 
 	publisher EventPublisher
 	events    EventSubscriber
 }
 
-func newTodoServer() *todoServer {
+func newTodoServer(repo TodoRepository) *todoServer {
 	b := newBroadcaster()
 	return &todoServer{
-		todos:     make(map[int32]*pb.TodoItem),
-		nextID:    1,
+		repo:      repo,
 		publisher: b,
 		events:    b,
 	}
@@ -48,18 +44,15 @@ func (s *todoServer) CreateTodo(ctx context.Context, req *pb.CreateTodoRequest) 
 		return nil, status.Errorf(codes.InvalidArgument, "title is required")
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	item := &pb.TodoItem{
-		Id:          s.nextID,
 		Title:       req.GetTitle(),
 		Description: req.GetDescription(),
 		Completed:   req.GetCompleted(),
 		CreatedAt:   time.Now().Format(time.RFC3339),
 	}
-	s.todos[item.Id] = item
-	s.nextID++
+	if err := s.repo.Insert(item); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to save todo: %v", err)
+	}
 
 	s.publisher.Publish(&pb.TodoEvent{Type: "created", Todo: item})
 
@@ -73,10 +66,7 @@ func (s *todoServer) CreateTodo(ctx context.Context, req *pb.CreateTodoRequest) 
 }
 
 func (s *todoServer) GetTodo(ctx context.Context, req *pb.GetTodoRequest) (*pb.GetTodoResponse, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	item, ok := s.todos[req.GetId()]
+	item, ok := s.repo.FindByID(req.GetId())
 	if !ok {
 		return nil, status.Errorf(codes.NotFound, "todo with id %d not found", req.GetId())
 	}
@@ -91,9 +81,6 @@ func (s *todoServer) GetTodo(ctx context.Context, req *pb.GetTodoRequest) (*pb.G
 }
 
 func (s *todoServer) ListTodos(ctx context.Context, req *pb.ListTodosRequest) (*pb.ListTodosResponse, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	page := req.GetPage()
 	limit := req.GetLimit()
 	if page < 1 {
@@ -103,13 +90,10 @@ func (s *todoServer) ListTodos(ctx context.Context, req *pb.ListTodosRequest) (*
 		limit = 10
 	}
 
-	ids := make([]int32, 0, len(s.todos))
-	for id := range s.todos {
-		ids = append(ids, id)
-	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	all := s.repo.FindAll()
+	sort.Slice(all, func(i, j int) bool { return all[i].Id < all[j].Id })
 
-	total := int32(len(ids))
+	total := int32(len(all))
 	start := (page - 1) * limit
 	if start > total {
 		start = total
@@ -119,13 +103,8 @@ func (s *todoServer) ListTodos(ctx context.Context, req *pb.ListTodosRequest) (*
 		end = total
 	}
 
-	todos := make([]*pb.TodoItem, 0, end-start)
-	for _, id := range ids[start:end] {
-		todos = append(todos, s.todos[id])
-	}
-
 	return &pb.ListTodosResponse{
-		Todos: todos,
+		Todos: all[start:end],
 		Total: total,
 		Page:  page,
 		Limit: limit,
@@ -137,10 +116,7 @@ func (s *todoServer) UpdateTodo(ctx context.Context, req *pb.UpdateTodoRequest) 
 		return nil, status.Errorf(codes.InvalidArgument, "title is required")
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	item, ok := s.todos[req.GetId()]
+	item, ok := s.repo.FindByID(req.GetId())
 	if !ok {
 		return nil, status.Errorf(codes.NotFound, "todo with id %d not found", req.GetId())
 	}
@@ -148,6 +124,10 @@ func (s *todoServer) UpdateTodo(ctx context.Context, req *pb.UpdateTodoRequest) 
 	item.Title = req.GetTitle()
 	item.Description = req.GetDescription()
 	item.Completed = req.GetCompleted()
+
+	if err := s.repo.Save(item); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to save todo: %v", err)
+	}
 
 	s.publisher.Publish(&pb.TodoEvent{Type: "updated", Todo: item})
 
@@ -161,14 +141,10 @@ func (s *todoServer) UpdateTodo(ctx context.Context, req *pb.UpdateTodoRequest) 
 }
 
 func (s *todoServer) DeleteTodo(ctx context.Context, req *pb.DeleteTodoRequest) (*pb.DeleteTodoResponse, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	item, ok := s.todos[req.GetId()]
+	item, ok := s.repo.Delete(req.GetId())
 	if !ok {
 		return nil, status.Errorf(codes.NotFound, "todo with id %d not found", req.GetId())
 	}
-	delete(s.todos, req.GetId())
 
 	s.publisher.Publish(&pb.TodoEvent{Type: "deleted", Todo: item})
 
@@ -176,14 +152,15 @@ func (s *todoServer) DeleteTodo(ctx context.Context, req *pb.DeleteTodoRequest) 
 }
 
 func (s *todoServer) CompleteTodo(ctx context.Context, req *pb.CompleteTodoRequest) (*pb.CompleteTodoResponse, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	item, ok := s.todos[req.GetId()]
+	item, ok := s.repo.FindByID(req.GetId())
 	if !ok {
 		return nil, status.Errorf(codes.NotFound, "todo with id %d not found", req.GetId())
 	}
 	item.Completed = true
+
+	if err := s.repo.Save(item); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to save todo: %v", err)
+	}
 
 	s.publisher.Publish(&pb.TodoEvent{Type: "completed", Todo: item})
 
@@ -257,6 +234,11 @@ func streamAuthInterceptor(srv interface{}, ss grpc.ServerStream, info *grpc.Str
 }
 
 func main() {
+	repo, err := newSQLiteRepository("todos.db")
+	if err != nil {
+		log.Fatalf("Failed to open database: %v", err)
+	}
+
 	lis, err := net.Listen("tcp", ":50051")
 	if err != nil {
 		log.Fatalf("Failed to listen: %v", err)
@@ -266,7 +248,7 @@ func main() {
 		grpc.ChainUnaryInterceptor(loggingInterceptor, authInterceptor),
 		grpc.ChainStreamInterceptor(streamAuthInterceptor),
 	)
-	pb.RegisterTodoServiceServer(s, newTodoServer())
+	pb.RegisterTodoServiceServer(s, newTodoServer(repo))
 	reflection.Register(s)
 
 	log.Println("gRPC Todo server listening on port 50051")

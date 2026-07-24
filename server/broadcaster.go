@@ -43,6 +43,15 @@ func (b *broadcaster) Subscribe() (int, <-chan *pb.TodoEvent) {
 	return id, ch
 }
 
+// listenerCount es solo para tests: no forma parte de EventPublisher ni
+// EventSubscriber a propósito, para no ensuciar el contrato de producción.
+func (b *broadcaster) listenerCount() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return len(b.listeners)
+}
+
 func (b *broadcaster) Unsubscribe(id int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()

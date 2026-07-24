@@ -7,6 +7,9 @@
 *.test
 *.out
 
+# Base de datos SQLite generada en runtime
+/server/todos.db
+
 # IDE
 .idea/
 .vscode/
