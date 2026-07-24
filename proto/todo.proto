@@ -23,6 +23,9 @@ service TodoService {
 
   // Mark a todo item as completed
   rpc CompleteTodo (CompleteTodoRequest) returns (CompleteTodoResponse);
+
+  // Stream events every time a todo is created, updated, completed or deleted
+  rpc WatchTodos (WatchTodosRequest) returns (stream TodoEvent);
 }
 
 // Request message for creating a todo
@@ -114,4 +117,13 @@ message TodoItem {
   string description = 3;
   bool completed = 4;
   string created_at = 5;
+}
+
+// Request message for watching todo changes
+message WatchTodosRequest {}
+
+// Event emitted whenever a todo is created, updated, completed or deleted
+message TodoEvent {
+  string type = 1; // "created" | "updated" | "completed" | "deleted"
+  TodoItem todo = 2;
 }

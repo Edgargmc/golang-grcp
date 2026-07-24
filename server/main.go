@@ -28,12 +28,18 @@ type todoServer struct {
 	mu     sync.Mutex
 	todos  map[int32]*pb.TodoItem
 	nextID int32
+
+	publisher EventPublisher
+	events    EventSubscriber
 }
 
 func newTodoServer() *todoServer {
+	b := newBroadcaster()
 	return &todoServer{
-		todos:  make(map[int32]*pb.TodoItem),
-		nextID: 1,
+		todos:     make(map[int32]*pb.TodoItem),
+		nextID:    1,
+		publisher: b,
+		events:    b,
 	}
 }
 
@@ -173,6 +179,25 @@ func (s *todoServer) CompleteTodo(ctx context.Context, req *pb.CompleteTodoReque
 	item.Completed = true
 
 	return &pb.CompleteTodoResponse{Id: item.Id, Completed: item.Completed}, nil
+}
+
+func (s *todoServer) WatchTodos(req *pb.WatchTodosRequest, stream pb.TodoService_WatchTodosServer) error {
+	id, events := s.events.Subscribe()
+	defer s.events.Unsubscribe(id)
+
+	for {
+		select {
+		case <-stream.Context().Done():
+			return stream.Context().Err()
+		case event, ok := <-events:
+			if !ok {
+				return nil
+			}
+			if err := stream.Send(event); err != nil {
+				return err
+			}
+		}
+	}
 }
 
 func loggingInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
