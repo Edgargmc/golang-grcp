@@ -6,7 +6,7 @@ A Todo service built to learn gRPC in depth — not a toy example. It covers una
 
 ## Features
 
-- **Full CRUD** — Create, Get, List, Update, Delete, Complete
+- **Full CRUD** — Create, Get, List, Update, Delete, Complete.
 - **Input validation** — empty titles rejected with `InvalidArgument`
 - **Auth** — a bearer token required on every RPC (unary and streaming), enforced via interceptors
 - **Structured errors** — proper gRPC status codes (`NotFound`, `InvalidArgument`, `Unauthenticated`, `DeadlineExceeded`) instead of generic failures
