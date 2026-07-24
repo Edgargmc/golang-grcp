@@ -61,6 +61,8 @@ func (s *todoServer) CreateTodo(ctx context.Context, req *pb.CreateTodoRequest) 
 	s.todos[item.Id] = item
 	s.nextID++
 
+	s.publisher.Publish(&pb.TodoEvent{Type: "created", Todo: item})
+
 	return &pb.CreateTodoResponse{
 		Id:          item.Id,
 		Title:       item.Title,
@@ -147,6 +149,8 @@ func (s *todoServer) UpdateTodo(ctx context.Context, req *pb.UpdateTodoRequest) 
 	item.Description = req.GetDescription()
 	item.Completed = req.GetCompleted()
 
+	s.publisher.Publish(&pb.TodoEvent{Type: "updated", Todo: item})
+
 	return &pb.UpdateTodoResponse{
 		Id:          item.Id,
 		Title:       item.Title,
@@ -160,10 +164,13 @@ func (s *todoServer) DeleteTodo(ctx context.Context, req *pb.DeleteTodoRequest) 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if _, ok := s.todos[req.GetId()]; !ok {
+	item, ok := s.todos[req.GetId()]
+	if !ok {
 		return nil, status.Errorf(codes.NotFound, "todo with id %d not found", req.GetId())
 	}
 	delete(s.todos, req.GetId())
+
+	s.publisher.Publish(&pb.TodoEvent{Type: "deleted", Todo: item})
 
 	return &pb.DeleteTodoResponse{Deleted: true}, nil
 }
@@ -177,6 +184,8 @@ func (s *todoServer) CompleteTodo(ctx context.Context, req *pb.CompleteTodoReque
 		return nil, status.Errorf(codes.NotFound, "todo with id %d not found", req.GetId())
 	}
 	item.Completed = true
+
+	s.publisher.Publish(&pb.TodoEvent{Type: "completed", Todo: item})
 
 	return &pb.CompleteTodoResponse{Id: item.Id, Completed: item.Completed}, nil
 }
