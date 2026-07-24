@@ -1,6 +1,6 @@
 # gRPC Todo Service
 
-[![CI](https://github.com/Edgargmc/golang/actions/workflows/ci.yml/badge.svg)](https://github.com/Edgargmc/golang/actions/workflows/ci.yml)
+[![CI](https://github.com/Edgargmc/golang-grcp/actions/workflows/ci.yml/badge.svg)](https://github.com/Edgargmc/golang-grcp/actions/workflows/ci.yml)
 
 A Todo service built to learn gRPC in depth — not a toy example. It covers unary and streaming RPCs, interceptors, authentication, structured errors, deadlines/cancellation, persistence, and automated testing, all designed with SOLID principles (interfaces over concrete types, single-responsibility components) so each piece can be swapped independently.
 
