@@ -238,13 +238,34 @@ func authInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServe
 	return handler(ctx, req)
 }
 
+func streamAuthInterceptor(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	if strings.HasPrefix(info.FullMethod, "/grpc.reflection.") {
+		return handler(srv, ss)
+	}
+
+	md, ok := metadata.FromIncomingContext(ss.Context())
+	if !ok {
+		return status.Error(codes.Unauthenticated, "missing metadata")
+	}
+
+	tokens := md.Get("authorization")
+	if len(tokens) == 0 || tokens[0] != authToken {
+		return status.Error(codes.Unauthenticated, "invalid or missing token")
+	}
+
+	return handler(srv, ss)
+}
+
 func main() {
 	lis, err := net.Listen("tcp", ":50051")
 	if err != nil {
 		log.Fatalf("Failed to listen: %v", err)
 	}
 
-	s := grpc.NewServer(grpc.ChainUnaryInterceptor(loggingInterceptor, authInterceptor))
+	s := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(loggingInterceptor, authInterceptor),
+		grpc.ChainStreamInterceptor(streamAuthInterceptor),
+	)
 	pb.RegisterTodoServiceServer(s, newTodoServer())
 	reflection.Register(s)
 
