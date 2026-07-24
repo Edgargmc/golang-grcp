@@ -242,12 +242,24 @@ func streamAuthInterceptor(srv interface{}, ss grpc.ServerStream, info *grpc.Str
 }
 
 func main() {
-	dbPath := os.Getenv("DB_PATH")
-	if dbPath == "" {
-		dbPath = "todos.db"
+	var repo TodoRepository
+	var err error
+
+	tursoURL := os.Getenv("TURSO_DATABASE_URL")
+	tursoToken := os.Getenv("TURSO_AUTH_TOKEN")
+
+	if tursoURL != "" && tursoToken != "" {
+		log.Println("Usando Turso como base de datos")
+		repo, err = newTursoRepository(tursoURL, tursoToken)
+	} else {
+		dbPath := os.Getenv("DB_PATH")
+		if dbPath == "" {
+			dbPath = "todos.db"
+		}
+		log.Printf("Usando SQLite local (%s)", dbPath)
+		repo, err = newSQLiteRepository(dbPath)
 	}
 
-	repo, err := newSQLiteRepository(dbPath)
 	if err != nil {
 		log.Fatalf("Failed to open database: %v", err)
 	}

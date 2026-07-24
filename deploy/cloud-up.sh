@@ -10,6 +10,11 @@ REGION="us-central1"
 # invoque el script.
 cd "$(dirname "$0")/.."
 
+# Credenciales de Turso generadas al vuelo (requiere `turso auth login`
+# hecho antes) — nunca quedan hardcodeadas en este archivo.
+TURSO_DATABASE_URL=$(turso db show grpc-todo --url)
+TURSO_AUTH_TOKEN=$(turso db tokens create grpc-todo)
+
 echo "Deployando '$SERVICE' al proyecto '$PROJECT_ID'..."
 gcloud run deploy "$SERVICE" \
   --project="$PROJECT_ID" \
@@ -18,6 +23,7 @@ gcloud run deploy "$SERVICE" \
   --allow-unauthenticated \
   --port=50051 \
   --use-http2 \
+  --set-env-vars="TURSO_DATABASE_URL=${TURSO_DATABASE_URL},TURSO_AUTH_TOKEN=${TURSO_AUTH_TOKEN}" \
   --quiet
 
 RAW_URL=$(gcloud run services describe "$SERVICE" \

@@ -3,7 +3,8 @@ package main
 import (
 	"database/sql"
 
-	_ "modernc.org/sqlite" // registra el driver "sqlite" para database/sql
+	_ "github.com/tursodatabase/libsql-client-go/libsql" // registra el driver "libsql"
+	_ "modernc.org/sqlite"                               // registra el driver "sqlite" para database/sql
 
 	pb "grpc-todo/gen"
 )
@@ -26,6 +27,24 @@ type sqliteRepository struct {
 
 func newSQLiteRepository(dataSourceName string) (*sqliteRepository, error) {
 	db, err := sql.Open("sqlite", dataSourceName)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := db.Exec(schema); err != nil {
+		return nil, err
+	}
+
+	return &sqliteRepository{db: db}, nil
+}
+
+// newTursoRepository conecta a una base remota de Turso en vez de un
+// archivo local. Reusa el mismo struct y los mismos métodos que
+// newSQLiteRepository — el dialecto SQL es el mismo, solo cambia el
+// driver y el destino de la conexión.
+func newTursoRepository(dbURL, authToken string) (*sqliteRepository, error) {
+	dsn := dbURL + "?authToken=" + authToken
+
+	db, err := sql.Open("libsql", dsn)
 	if err != nil {
 		return nil, err
 	}
