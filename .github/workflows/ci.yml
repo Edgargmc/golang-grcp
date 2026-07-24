@@ -26,3 +26,20 @@ jobs:
 
       - name: Test
         run: go test ./... -race -v
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t grpc-todo-server .
+
+      - name: Smoke test container
+        run: |
+          docker run -d --name smoke-test -p 50051:50051 grpc-todo-server
+          sleep 3
+          docker exec smoke-test /app/healthcheck
+          docker logs smoke-test
+          docker stop smoke-test

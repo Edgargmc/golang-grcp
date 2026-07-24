@@ -4,12 +4,15 @@ import (
 	"context"
 	"log"
 	"net"
+	"os"
 	"sort"
 	"strings"
 	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
@@ -202,6 +205,10 @@ func loggingInterceptor(ctx context.Context, req interface{}, info *grpc.UnarySe
 }
 
 func authInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	if strings.HasPrefix(info.FullMethod, "/grpc.health.v1.Health/") {
+		return handler(ctx, req)
+	}
+
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "missing metadata")
@@ -216,7 +223,8 @@ func authInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServe
 }
 
 func streamAuthInterceptor(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	if strings.HasPrefix(info.FullMethod, "/grpc.reflection.") {
+	if strings.HasPrefix(info.FullMethod, "/grpc.reflection.") ||
+		strings.HasPrefix(info.FullMethod, "/grpc.health.v1.Health/") {
 		return handler(srv, ss)
 	}
 
@@ -234,7 +242,12 @@ func streamAuthInterceptor(srv interface{}, ss grpc.ServerStream, info *grpc.Str
 }
 
 func main() {
-	repo, err := newSQLiteRepository("todos.db")
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		dbPath = "todos.db"
+	}
+
+	repo, err := newSQLiteRepository(dbPath)
 	if err != nil {
 		log.Fatalf("Failed to open database: %v", err)
 	}
@@ -250,6 +263,10 @@ func main() {
 	)
 	pb.RegisterTodoServiceServer(s, newTodoServer(repo))
 	reflection.Register(s)
+
+	healthServer := health.NewServer()
+	healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+	grpc_health_v1.RegisterHealthServer(s, healthServer)
 
 	log.Println("gRPC Todo server listening on port 50051")
 	if err := s.Serve(lis); err != nil {
