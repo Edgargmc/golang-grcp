@@ -14,7 +14,9 @@ A Todo service built to learn gRPC in depth — not a toy example. It covers una
 - **Deadlines & cancellation** — RPCs (including the long-lived `WatchTodos` stream) respect client-set deadlines and clean up their own resources when a client disconnects
 - **Persistence** — SQLite-backed storage in production, in-memory storage in tests, behind the same `TodoRepository` interface
 - **Automated tests** — a `bufconn`-based suite exercises the real server (interceptors included) with no network sockets involved; run with the race detector in CI
-- **CI** — every push/PR runs `go build`, `go vet`, and `go test -race` via GitHub Actions
+- **Health check** — the standard `grpc.health.v1.Health` service (public, no token needed) so orchestrators can tell if the server is actually serving
+- **Containerized** — a multi-stage Dockerfile builds a ~45MB static binary image; `docker-compose.yml` wires up a persistent volume so data survives container recreation
+- **CI** — every push/PR runs `go build`, `go vet`, `go test -race`, and a Docker image build + smoke test via GitHub Actions
 
 ## Project Structure
 
@@ -27,10 +29,13 @@ grpc-todo/
 │   ├── broadcaster.go           # EventPublisher/EventSubscriber pub/sub for WatchTodos
 │   ├── repository.go            # TodoRepository interface + in-memory implementation
 │   ├── repository_sqlite.go     # SQLite implementation of TodoRepository
+│   ├── healthcheck/main.go       # Standalone gRPC health probe, used by Docker HEALTHCHECK
 │   ├── main_test.go              # bufconn integration tests (CRUD, auth, deadlines, streaming)
 │   └── repository_sqlite_test.go # Isolated repository test (:memory: sqlite)
 ├── client/main.go              # Example Go client exercising every RPC
-├── .github/workflows/ci.yml    # Build + vet + test on every push
+├── Dockerfile                  # Multi-stage build: static binary + minimal Alpine runtime
+├── docker-compose.yml          # Local run with a persistent volume for todos.db
+├── .github/workflows/ci.yml    # Build + vet + test + Docker build/smoke-test on every push
 ├── build.sh                    # Regenerates gen/ from proto/todo.proto
 └── Makefile                    # run-server / run-client / build shortcuts
 ```
@@ -46,7 +51,8 @@ grpc-todo/
 
 ### Prerequisites
 
-- Go 1.25+ (see `go.mod`)
+- Go 1.25+ (see `go.mod`) — only needed to run it directly with `go run`; not required for the Docker path
+- Docker + Docker Compose — only needed for the Docker path
 - `protoc` + `protoc-gen-go` + `protoc-gen-go-grpc` — only needed if you change `proto/todo.proto` and want to regenerate `gen/`
 - [`grpcurl`](https://github.com/fullstorydev/grpcurl) — handy for manual testing (`brew install grpcurl`)
 
@@ -56,13 +62,41 @@ grpc-todo/
 # Terminal 1
 cd server
 go run .          # creates/opens todos.db in the current directory
+                  # override with DB_PATH=/some/path.db go run .
 
 # Terminal 2
 grpcurl -plaintext -H 'authorization: secret-token-123' \
   -d '{"title":"Buy milk"}' localhost:50051 todo.TodoService/CreateTodo
 ```
 
-All RPCs except server reflection require the `authorization` metadata header shown above (a hardcoded token for learning purposes — see `authToken` in `server/main.go`).
+All RPCs except server reflection and the health check require the `authorization` metadata header shown above (a hardcoded token for learning purposes — see `authToken` in `server/main.go`).
+
+### Run it with Docker
+
+```bash
+# Build the image and start the container (foreground, add -d to detach)
+docker compose up --build
+
+# In another terminal
+grpcurl -plaintext -H 'authorization: secret-token-123' \
+  -d '{"title":"Buy milk"}' localhost:50051 todo.TodoService/CreateTodo
+
+# Health check, no token needed
+grpcurl -plaintext localhost:50051 grpc.health.v1.Health/Check
+
+# Container health status (should say "healthy" after a few seconds)
+docker compose ps
+```
+
+Data lives in the named volume `grpc-todo_todos-data`, mounted at `/data` inside the container (`DB_PATH=/data/todos.db`) — it survives even a full `docker compose down` + `docker compose up`, since that recreates the container but not the volume.
+
+```bash
+# Stop and remove the container (keeps the volume/data)
+docker compose down
+
+# Stop and also wipe the data
+docker compose down -v
+```
 
 ### Regenerate code from the `.proto`
 
@@ -89,6 +123,8 @@ Defined in `proto/todo.proto`:
 | `DeleteTodo` | unary | Delete by id |
 | `CompleteTodo` | unary | Mark as completed |
 | `WatchTodos` | **server streaming** | Live feed of every change, across all clients |
+
+Also exposed: `grpc.health.v1.Health/Check` (standard health-check service, public — no auth token required) and server reflection (also public), so tools like `grpcurl`/Postman can discover the API without needing this repo.
 
 ## Related
 
