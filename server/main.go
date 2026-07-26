@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -193,6 +194,66 @@ func (s *todoServer) WatchTodos(req *pb.WatchTodosRequest, stream pb.TodoService
 			}
 			if err := stream.Send(event); err != nil {
 				return err
+			}
+		}
+	}
+}
+
+// SyncTodos is bidirectional: it reuses CreateTodo/UpdateTodo/DeleteTodo for
+// every incoming change (same validation, same repo, same broadcaster
+// publish) and reuses the broadcaster subscription for the outgoing side —
+// exactly the same mechanism WatchTodos uses, just shared with a Recv loop.
+func (s *todoServer) SyncTodos(stream pb.TodoService_SyncTodosServer) error {
+	id, events := s.events.Subscribe()
+	defer s.events.Unsubscribe(id)
+
+	ctx := stream.Context()
+	sendDone := make(chan error, 1)
+
+	// Only this goroutine calls stream.Send — a gRPC stream forbids
+	// concurrent Send calls, so all outgoing traffic funnels through here.
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				sendDone <- ctx.Err()
+				return
+			case event, ok := <-events:
+				if !ok {
+					sendDone <- nil
+					return
+				}
+				if err := stream.Send(event); err != nil {
+					sendDone <- err
+					return
+				}
+			}
+		}
+	}()
+
+	for {
+		change, err := stream.Recv()
+		if err == io.EOF {
+			// Client closed its send side (CloseSend) but may still want
+			// events — keep the RPC alive until it fully disconnects.
+			return <-sendDone
+		}
+		if err != nil {
+			return err
+		}
+
+		switch op := change.Operation.(type) {
+		case *pb.TodoChange_Create:
+			if _, err := s.CreateTodo(ctx, op.Create); err != nil {
+				log.Printf("[SyncTodos] create failed: %v", err)
+			}
+		case *pb.TodoChange_Update:
+			if _, err := s.UpdateTodo(ctx, op.Update); err != nil {
+				log.Printf("[SyncTodos] update failed: %v", err)
+			}
+		case *pb.TodoChange_Delete:
+			if _, err := s.DeleteTodo(ctx, op.Delete); err != nil {
+				log.Printf("[SyncTodos] delete failed: %v", err)
 			}
 		}
 	}

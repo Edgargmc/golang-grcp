@@ -28,6 +28,10 @@ service TodoService {
 
   // Stream events every time a todo is created, updated, completed or deleted
   rpc WatchTodos (WatchTodosRequest) returns (stream TodoEvent);
+
+  // Bidirectional: client streams local changes, server streams back every
+  // event (its own changes applied, plus everyone else's), on the same connection
+  rpc SyncTodos (stream TodoChange) returns (stream TodoEvent);
 }
 
 // Request message for creating a todo
@@ -128,4 +132,13 @@ message WatchTodosRequest {}
 message TodoEvent {
   string type = 1; // "created" | "updated" | "completed" | "deleted"
   TodoItem todo = 2;
+}
+
+// One change sent by a SyncTodos client — exactly one of these per message
+message TodoChange {
+  oneof operation {
+    CreateTodoRequest create = 1;
+    UpdateTodoRequest update = 2;
+    DeleteTodoRequest delete = 3;
+  }
 }

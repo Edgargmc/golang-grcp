@@ -319,3 +319,70 @@ func TestWatchTodos_ReceivesCreatedEvent(t *testing.T) {
 		t.Fatal("timed out waiting for event")
 	}
 }
+
+func TestSyncTodos_SendCreate_ReceivesCreatedEventBack(t *testing.T) {
+	client := newTestClient(t)
+
+	syncCtx, cancel := context.WithTimeout(authContext(context.Background()), 2*time.Second)
+	defer cancel()
+
+	stream, err := client.SyncTodos(syncCtx)
+	if err != nil {
+		t.Fatalf("SyncTodos failed: %v", err)
+	}
+
+	err = stream.Send(&pb.TodoChange{
+		Operation: &pb.TodoChange_Create{
+			Create: &pb.CreateTodoRequest{Title: "Creado via SyncTodos"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("stream.Send failed: %v", err)
+	}
+
+	event, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("stream.Recv failed: %v", err)
+	}
+	if event.Type != "created" {
+		t.Errorf("expected type %q, got %q", "created", event.Type)
+	}
+	if event.Todo.Title != "Creado via SyncTodos" {
+		t.Errorf("expected title %q, got %q", "Creado via SyncTodos", event.Todo.Title)
+	}
+}
+
+// Una operación inválida (título vacío) no debe tirar abajo el stream: el
+// Recv loop del servidor solo loguea el error y sigue esperando el próximo
+// mensaje, así que un cambio válido después debe seguir funcionando.
+func TestSyncTodos_InvalidChangeDoesNotBreakStream(t *testing.T) {
+	client := newTestClient(t)
+
+	syncCtx, cancel := context.WithTimeout(authContext(context.Background()), 2*time.Second)
+	defer cancel()
+
+	stream, err := client.SyncTodos(syncCtx)
+	if err != nil {
+		t.Fatalf("SyncTodos failed: %v", err)
+	}
+
+	if err := stream.Send(&pb.TodoChange{
+		Operation: &pb.TodoChange_Create{Create: &pb.CreateTodoRequest{Title: "   "}},
+	}); err != nil {
+		t.Fatalf("stream.Send (invalid) failed: %v", err)
+	}
+
+	if err := stream.Send(&pb.TodoChange{
+		Operation: &pb.TodoChange_Create{Create: &pb.CreateTodoRequest{Title: "Este sí vale"}},
+	}); err != nil {
+		t.Fatalf("stream.Send (valid) failed: %v", err)
+	}
+
+	event, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("stream.Recv failed: %v", err)
+	}
+	if event.Todo.Title != "Este sí vale" {
+		t.Errorf("expected only the valid change to produce an event, got title %q", event.Todo.Title)
+	}
+}
