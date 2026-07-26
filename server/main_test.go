@@ -352,6 +352,68 @@ func TestSyncTodos_SendCreate_ReceivesCreatedEventBack(t *testing.T) {
 	}
 }
 
+// El client_id es lo que le permite a un cliente reconciliar un create
+// optimista (hecho con un id temporal, típicamente offline) contra el id
+// real que el servidor recién asigna acá.
+func TestSyncTodos_SendCreateWithClientId_EchoesItBack(t *testing.T) {
+	client := newTestClient(t)
+
+	syncCtx, cancel := context.WithTimeout(authContext(context.Background()), 2*time.Second)
+	defer cancel()
+
+	stream, err := client.SyncTodos(syncCtx)
+	if err != nil {
+		t.Fatalf("SyncTodos failed: %v", err)
+	}
+
+	err = stream.Send(&pb.TodoChange{
+		Operation: &pb.TodoChange_Create{
+			Create: &pb.CreateTodoRequest{Title: "Con client_id"},
+		},
+		ClientId: "temp-123",
+	})
+	if err != nil {
+		t.Fatalf("stream.Send failed: %v", err)
+	}
+
+	event, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("stream.Recv failed: %v", err)
+	}
+	if event.ClientId != "temp-123" {
+		t.Errorf("expected client_id %q, got %q", "temp-123", event.ClientId)
+	}
+}
+
+// Un cambio SIN client_id (el caso normal, ej. desde Python/grpcurl/otro
+// Android sin este feature) no debe traer uno inventado.
+func TestSyncTodos_SendCreateWithoutClientId_EventHasEmptyClientId(t *testing.T) {
+	client := newTestClient(t)
+
+	syncCtx, cancel := context.WithTimeout(authContext(context.Background()), 2*time.Second)
+	defer cancel()
+
+	stream, err := client.SyncTodos(syncCtx)
+	if err != nil {
+		t.Fatalf("SyncTodos failed: %v", err)
+	}
+
+	err = stream.Send(&pb.TodoChange{
+		Operation: &pb.TodoChange_Create{Create: &pb.CreateTodoRequest{Title: "Sin client_id"}},
+	})
+	if err != nil {
+		t.Fatalf("stream.Send failed: %v", err)
+	}
+
+	event, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("stream.Recv failed: %v", err)
+	}
+	if event.ClientId != "" {
+		t.Errorf("expected empty client_id, got %q", event.ClientId)
+	}
+}
+
 // Una operación inválida (título vacío) no debe tirar abajo el stream: el
 // cliente recibe un evento type="error" con el motivo, y un cambio válido
 // mandado después debe seguir funcionando con normalidad.

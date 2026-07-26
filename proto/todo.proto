@@ -135,6 +135,12 @@ message TodoEvent {
   string type = 1; // "created" | "updated" | "completed" | "deleted" | "error"
   TodoItem todo = 2;
   string error = 3;
+  // Si el TodoChange que originó este evento traía client_id, se repite acá
+  // tal cual — le permite a quien lo mandó reconciliar su estado optimista
+  // (por ejemplo, un create hecho offline con un id temporal) sin ambigüedad.
+  // Vacío en eventos que no vinieron de un client_id (cambios de otros
+  // clientes, o cualquier evento de WatchTodos).
+  string client_id = 4;
 }
 
 // One change sent by a SyncTodos client — exactly one of these per message
@@ -144,4 +150,5 @@ message TodoChange {
     UpdateTodoRequest update = 2;
     DeleteTodoRequest delete = 3;
   }
+  string client_id = 4;
 }

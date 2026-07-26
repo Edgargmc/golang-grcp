@@ -34,6 +34,25 @@ func defaultIfEmpty(value, fallback string) string {
 	return value
 }
 
+// Deja pasar el client_id de un TodoChange (ver SyncTodos) hasta el evento
+// que termina publicando CreateTodo/UpdateTodo/DeleteTodo, sin cambiar la
+// firma pública de esos RPCs — lo llevamos colgado del context.
+type contextKey string
+
+const clientIDContextKey contextKey = "sync_client_id"
+
+func withClientID(ctx context.Context, clientID string) context.Context {
+	if clientID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, clientIDContextKey, clientID)
+}
+
+func clientIDFromContext(ctx context.Context) string {
+	clientID, _ := ctx.Value(clientIDContextKey).(string)
+	return clientID
+}
+
 type todoServer struct {
 	pb.UnimplementedTodoServiceServer
 
@@ -67,7 +86,7 @@ func (s *todoServer) CreateTodo(ctx context.Context, req *pb.CreateTodoRequest) 
 		return nil, status.Errorf(codes.Internal, "failed to save todo: %v", err)
 	}
 
-	s.publisher.Publish(&pb.TodoEvent{Type: "created", Todo: item})
+	s.publisher.Publish(&pb.TodoEvent{Type: "created", Todo: item, ClientId: clientIDFromContext(ctx)})
 
 	return &pb.CreateTodoResponse{
 		Id:          item.Id,
@@ -142,7 +161,7 @@ func (s *todoServer) UpdateTodo(ctx context.Context, req *pb.UpdateTodoRequest) 
 		return nil, status.Errorf(codes.Internal, "failed to save todo: %v", err)
 	}
 
-	s.publisher.Publish(&pb.TodoEvent{Type: "updated", Todo: item})
+	s.publisher.Publish(&pb.TodoEvent{Type: "updated", Todo: item, ClientId: clientIDFromContext(ctx)})
 
 	return &pb.UpdateTodoResponse{
 		Id:          item.Id,
@@ -159,7 +178,7 @@ func (s *todoServer) DeleteTodo(ctx context.Context, req *pb.DeleteTodoRequest) 
 		return nil, status.Errorf(codes.NotFound, "todo with id %d not found", req.GetId())
 	}
 
-	s.publisher.Publish(&pb.TodoEvent{Type: "deleted", Todo: item})
+	s.publisher.Publish(&pb.TodoEvent{Type: "deleted", Todo: item, ClientId: clientIDFromContext(ctx)})
 
 	return &pb.DeleteTodoResponse{Deleted: true}, nil
 }
@@ -259,19 +278,21 @@ func (s *todoServer) SyncTodos(stream pb.TodoService_SyncTodosServer) error {
 			return err
 		}
 
+		changeCtx := withClientID(ctx, change.ClientId)
+
 		switch op := change.Operation.(type) {
 		case *pb.TodoChange_Create:
-			if _, err := s.CreateTodo(ctx, op.Create); err != nil {
+			if _, err := s.CreateTodo(changeCtx, op.Create); err != nil {
 				log.Printf("[SyncTodos] create failed: %v", err)
 				sendError(err.Error())
 			}
 		case *pb.TodoChange_Update:
-			if _, err := s.UpdateTodo(ctx, op.Update); err != nil {
+			if _, err := s.UpdateTodo(changeCtx, op.Update); err != nil {
 				log.Printf("[SyncTodos] update failed: %v", err)
 				sendError(err.Error())
 			}
 		case *pb.TodoChange_Delete:
-			if _, err := s.DeleteTodo(ctx, op.Delete); err != nil {
+			if _, err := s.DeleteTodo(changeCtx, op.Delete); err != nil {
 				log.Printf("[SyncTodos] delete failed: %v", err)
 				sendError(err.Error())
 			}
