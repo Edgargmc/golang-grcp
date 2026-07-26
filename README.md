@@ -65,11 +65,11 @@ go run .          # creates/opens todos.db in the current directory
                   # override with DB_PATH=/some/path.db go run .
 
 # Terminal 2
-grpcurl -plaintext -H 'authorization: secret-token-123' \
+grpcurl -plaintext -H 'authorization: local-dev-token-not-for-production' \
   -d '{"title":"Buy milk"}' localhost:50051 todo.TodoService/CreateTodo
 ```
 
-All RPCs except server reflection and the health check require the `authorization` metadata header shown above (a hardcoded token for learning purposes — see `authToken` in `server/main.go`).
+All RPCs except server reflection and the health check require the `authorization` metadata header shown above. The token comes from the `AUTH_TOKEN` env var (see `authToken` in `server/main.go`) — unset, it falls back to `local-dev-token-not-for-production` for local runs only. **Production (Cloud Run) always sets a real `AUTH_TOKEN`** via GitHub Secrets; it's never committed to the repo.
 
 ### Run it with Docker
 
@@ -78,7 +78,7 @@ All RPCs except server reflection and the health check require the `authorizatio
 docker compose up --build
 
 # In another terminal
-grpcurl -plaintext -H 'authorization: secret-token-123' \
+grpcurl -plaintext -H 'authorization: local-dev-token-not-for-production' \
   -d '{"title":"Buy milk"}' localhost:50051 todo.TodoService/CreateTodo
 
 # Health check, no token needed

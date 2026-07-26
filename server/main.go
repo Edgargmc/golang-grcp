@@ -20,9 +20,18 @@ import (
 	pb "grpc-todo/gen"
 )
 
-// Token fijo solo para fines didácticos. En un caso real esto vendría
-// de una base de datos, un JWT firmado, o un proveedor de identidad.
-const authToken = "secret-token-123"
+// Token fijo solo para fines didácticos (en un caso real vendría de una
+// base de datos, un JWT firmado, o un proveedor de identidad) — pero NO
+// hardcodeado en el código: se lee de AUTH_TOKEN. El valor de acá abajo
+// es solo un default para desarrollo local, nunca el real de producción.
+var authToken = defaultIfEmpty(os.Getenv("AUTH_TOKEN"), "local-dev-token-not-for-production")
+
+func defaultIfEmpty(value, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
+}
 
 type todoServer struct {
 	pb.UnimplementedTodoServiceServer

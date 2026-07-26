@@ -64,6 +64,7 @@ jobs:
         env:
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          AUTH_TOKEN: ${{ secrets.AUTH_TOKEN }}
         run: |
           gcloud run deploy grpc-todo \
             --project=grpc-todo-demo-24258 \
@@ -72,5 +73,5 @@ jobs:
             --allow-unauthenticated \
             --port=50051 \
             --use-http2 \
-            --set-env-vars="TURSO_DATABASE_URL=${TURSO_DATABASE_URL},TURSO_AUTH_TOKEN=${TURSO_AUTH_TOKEN}" \
+            --set-env-vars="TURSO_DATABASE_URL=${TURSO_DATABASE_URL},TURSO_AUTH_TOKEN=${TURSO_AUTH_TOKEN},AUTH_TOKEN=${AUTH_TOKEN}" \
             --quiet

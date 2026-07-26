@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"os"
 	"time"
 
 	"google.golang.org/grpc"
@@ -14,8 +15,16 @@ import (
 	pb "grpc-todo/gen"
 )
 
-// Debe coincidir con el authToken hardcodeado en server/main.go.
-const authToken = "secret-token-123"
+// Debe coincidir con el AUTH_TOKEN del servidor. Se lee de una env var,
+// nunca hardcodeado — el valor de acá es solo un default de desarrollo.
+var authToken = getEnvOrDefault("AUTH_TOKEN", "local-dev-token-not-for-production")
+
+func getEnvOrDefault(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
+}
 
 func authInterceptor(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", authToken)
