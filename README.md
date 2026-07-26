@@ -12,7 +12,7 @@ A Todo service built to learn gRPC in depth — not a toy example. It covers una
 - **Structured errors** — proper gRPC status codes (`NotFound`, `InvalidArgument`, `Unauthenticated`, `DeadlineExceeded`) instead of generic failures
 - **Real-time events** — `WatchTodos` streams `created`/`updated`/`completed`/`deleted` events to any number of connected clients, via an internal pub/sub broadcaster
 - **Deadlines & cancellation** — RPCs (including the long-lived `WatchTodos` stream) respect client-set deadlines and clean up their own resources when a client disconnects
-- **Persistence** — SQLite-backed storage in production, in-memory storage in tests, behind the same `TodoRepository` interface
+- **Persistence** — [Turso](https://turso.tech) (libSQL) when `TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN` are set (used in production/Cloud Run), local SQLite file otherwise, in-memory storage in tests — all behind the same `TodoRepository` interface
 - **Automated tests** — a `bufconn`-based suite exercises the real server (interceptors included) with no network sockets involved; run with the race detector in CI
 - **Health check** — the standard `grpc.health.v1.Health` service (public, no token needed) so orchestrators can tell if the server is actually serving
 - **Containerized** — a multi-stage Dockerfile builds a ~45MB static binary image; `docker-compose.yml` wires up a persistent volume so data survives container recreation
@@ -109,6 +109,23 @@ docker compose down -v
 ```bash
 go test ./server/... -race -v
 ```
+
+### Reset the database
+
+**Local SQLite** (`todos.db`) — with the server stopped:
+```bash
+rm todos.db   # recreated empty on next `go run .`
+```
+or, without deleting the file:
+```bash
+sqlite3 todos.db "DELETE FROM todos; DELETE FROM sqlite_sequence WHERE name='todos';"
+```
+
+**Turso** (production) — same idea, via the [Turso CLI](https://docs.turso.tech/cli/installation):
+```bash
+turso db shell grpc-todo "DELETE FROM todos; DELETE FROM sqlite_sequence WHERE name='todos';"
+```
+The second statement resets the autoincrement counter so the next `CreateTodo` starts back at `id: 1`. Any connected `WatchTodos` client (including the Android app) won't see this — it's a direct SQL change, bypassing the server and its broadcaster entirely.
 
 ## API
 

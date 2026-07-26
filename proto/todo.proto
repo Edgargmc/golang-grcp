@@ -3,6 +3,8 @@ syntax = "proto3";
 package todo;
 
 option go_package = "./;todo";
+option java_package = "com.edgargmc.grpctodo.proto";
+option java_multiple_files = true;
 
 // The Todo service definition
 service TodoService {
