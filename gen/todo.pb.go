@@ -851,11 +851,14 @@ func (*WatchTodosRequest) Descriptor() ([]byte, []int) {
 	return file_proto_todo_proto_rawDescGZIP(), []int{13}
 }
 
-// Event emitted whenever a todo is created, updated, completed or deleted
+// Event emitted whenever a todo is created, updated, completed or deleted.
+// Also used by SyncTodos to report back a rejected change: type = "error",
+// todo unset, error = mensaje. WatchTodos nunca manda type = "error".
 type TodoEvent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"` // "created" | "updated" | "completed" | "deleted"
+	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"` // "created" | "updated" | "completed" | "deleted" | "error"
 	Todo          *TodoItem              `protobuf:"bytes,2,opt,name=todo,proto3" json:"todo,omitempty"`
+	Error         string                 `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -902,6 +905,13 @@ func (x *TodoEvent) GetTodo() *TodoItem {
 		return x.Todo
 	}
 	return nil
+}
+
+func (x *TodoEvent) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
 }
 
 // One change sent by a SyncTodos client — exactly one of these per message
@@ -1064,10 +1074,11 @@ const file_proto_todo_proto_rawDesc = "" +
 	"\tcompleted\x18\x04 \x01(\bR\tcompleted\x12\x1d\n" +
 	"\n" +
 	"created_at\x18\x05 \x01(\tR\tcreatedAt\"\x13\n" +
-	"\x11WatchTodosRequest\"C\n" +
+	"\x11WatchTodosRequest\"Y\n" +
 	"\tTodoEvent\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\"\n" +
-	"\x04todo\x18\x02 \x01(\v2\x0e.todo.TodoItemR\x04todo\"\xb2\x01\n" +
+	"\x04todo\x18\x02 \x01(\v2\x0e.todo.TodoItemR\x04todo\x12\x14\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\"\xb2\x01\n" +
 	"\n" +
 	"TodoChange\x121\n" +
 	"\x06create\x18\x01 \x01(\v2\x17.todo.CreateTodoRequestH\x00R\x06create\x121\n" +

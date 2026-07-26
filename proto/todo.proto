@@ -128,10 +128,13 @@ message TodoItem {
 // Request message for watching todo changes
 message WatchTodosRequest {}
 
-// Event emitted whenever a todo is created, updated, completed or deleted
+// Event emitted whenever a todo is created, updated, completed or deleted.
+// Also used by SyncTodos to report back a rejected change: type = "error",
+// todo unset, error = mensaje. WatchTodos nunca manda type = "error".
 message TodoEvent {
-  string type = 1; // "created" | "updated" | "completed" | "deleted"
+  string type = 1; // "created" | "updated" | "completed" | "deleted" | "error"
   TodoItem todo = 2;
+  string error = 3;
 }
 
 // One change sent by a SyncTodos client — exactly one of these per message

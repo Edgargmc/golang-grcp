@@ -353,9 +353,9 @@ func TestSyncTodos_SendCreate_ReceivesCreatedEventBack(t *testing.T) {
 }
 
 // Una operación inválida (título vacío) no debe tirar abajo el stream: el
-// Recv loop del servidor solo loguea el error y sigue esperando el próximo
-// mensaje, así que un cambio válido después debe seguir funcionando.
-func TestSyncTodos_InvalidChangeDoesNotBreakStream(t *testing.T) {
+// cliente recibe un evento type="error" con el motivo, y un cambio válido
+// mandado después debe seguir funcionando con normalidad.
+func TestSyncTodos_InvalidChange_ReceivesErrorEventAndKeepsWorking(t *testing.T) {
 	client := newTestClient(t)
 
 	syncCtx, cancel := context.WithTimeout(authContext(context.Background()), 2*time.Second)
@@ -370,6 +370,17 @@ func TestSyncTodos_InvalidChangeDoesNotBreakStream(t *testing.T) {
 		Operation: &pb.TodoChange_Create{Create: &pb.CreateTodoRequest{Title: "   "}},
 	}); err != nil {
 		t.Fatalf("stream.Send (invalid) failed: %v", err)
+	}
+
+	errEvent, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("stream.Recv (error event) failed: %v", err)
+	}
+	if errEvent.Type != "error" {
+		t.Errorf("expected type %q, got %q", "error", errEvent.Type)
+	}
+	if errEvent.Error == "" {
+		t.Errorf("expected a non-empty error message")
 	}
 
 	if err := stream.Send(&pb.TodoChange{

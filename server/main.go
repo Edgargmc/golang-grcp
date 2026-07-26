@@ -209,9 +209,14 @@ func (s *todoServer) SyncTodos(stream pb.TodoService_SyncTodosServer) error {
 
 	ctx := stream.Context()
 	sendDone := make(chan error, 1)
+	// Errores de validación de ESTE cliente (título vacío, etc). No usan el
+	// broadcaster porque no le importan a nadie más — solo a quien mandó el
+	// cambio que falló.
+	errs := make(chan *pb.TodoEvent, 1)
 
 	// Only this goroutine calls stream.Send — a gRPC stream forbids
-	// concurrent Send calls, so all outgoing traffic funnels through here.
+	// concurrent Send calls, so all outgoing traffic (eventos del
+	// broadcaster y errores propios) funnels through here.
 	go func() {
 		for {
 			select {
@@ -227,9 +232,21 @@ func (s *todoServer) SyncTodos(stream pb.TodoService_SyncTodosServer) error {
 					sendDone <- err
 					return
 				}
+			case event := <-errs:
+				if err := stream.Send(event); err != nil {
+					sendDone <- err
+					return
+				}
 			}
 		}
 	}()
+
+	sendError := func(msg string) {
+		select {
+		case errs <- &pb.TodoEvent{Type: "error", Error: msg}:
+		case <-ctx.Done():
+		}
+	}
 
 	for {
 		change, err := stream.Recv()
@@ -246,14 +263,17 @@ func (s *todoServer) SyncTodos(stream pb.TodoService_SyncTodosServer) error {
 		case *pb.TodoChange_Create:
 			if _, err := s.CreateTodo(ctx, op.Create); err != nil {
 				log.Printf("[SyncTodos] create failed: %v", err)
+				sendError(err.Error())
 			}
 		case *pb.TodoChange_Update:
 			if _, err := s.UpdateTodo(ctx, op.Update); err != nil {
 				log.Printf("[SyncTodos] update failed: %v", err)
+				sendError(err.Error())
 			}
 		case *pb.TodoChange_Delete:
 			if _, err := s.DeleteTodo(ctx, op.Delete); err != nil {
 				log.Printf("[SyncTodos] delete failed: %v", err)
+				sendError(err.Error())
 			}
 		}
 	}
